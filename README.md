@@ -2,7 +2,7 @@
 
 > A production-grade and research-grade system for reducing LLM latency through semantic caching with vector similarity retrieval.
 
-## 🎯 Overview
+## Overview
 
 Neural Cache intercepts queries to LLM-based systems, encodes them into embeddings, retrieves semantically similar past queries, and either reuses cached responses or adapts them — all while maintaining output quality. The system targets **<50ms retrieval latency** and **>40% cache hit rates** on repetitive query workloads.
 
@@ -17,7 +17,7 @@ Neural Cache intercepts queries to LLM-based systems, encodes them into embeddin
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ### Data Flow Diagram
 
@@ -91,7 +91,7 @@ Neural Cache intercepts queries to LLM-based systems, encodes them into embeddin
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 NeuralCache/
@@ -127,7 +127,7 @@ NeuralCache/
 
 ---
 
-## ⚙️ Installation
+## Installation
 
 ```bash
 # Clone or navigate to the project
@@ -162,7 +162,7 @@ pip install -e ".[dev]"
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Basic Usage
 
@@ -252,7 +252,7 @@ config = CacheConfig(
 
 ---
 
-## 🔧 Configuration Reference
+## Configuration Reference
 
 ### Embedding Models
 
@@ -291,7 +291,7 @@ config = CacheConfig(
 
 ---
 
-## 🔬 Experiment Framework
+## Experiment Framework
 
 ### Running Experiments
 
@@ -349,7 +349,7 @@ Experiment 4: Eviction Policy
 
 ---
 
-## 📊 Metrics & Monitoring
+## Metrics & Monitoring
 
 ### Prometheus Metrics
 
@@ -396,7 +396,7 @@ All operations emit structured JSON logs:
 
 ---
 
-## 🌐 CLI Reference
+## CLI Reference
 
 ```bash
 # Initialize cache
@@ -420,7 +420,7 @@ neural-cache serve --port 8000
 
 ---
 
-## 🔬 Research Paper Design
+## Research Paper Design
 
 ### Title
 *"NeuralCache: Semantic Caching for Latency Reduction in Large Language Model Systems"*
@@ -456,7 +456,7 @@ We present NeuralCache, a production-grade semantic caching system that reduces 
 
 ---
 
-## 🧪 Advanced Extensions
+## Advanced Extensions
 
 ### 1. Adaptive Threshold Learning
 
@@ -501,7 +501,7 @@ The `LEARNED_SCORING` decision strategy trains on feedback history to predict ca
 
 ---
 
-## 📝 Complete Example Workflow
+## Complete Example Workflow
 
 ```
 User Query: "What is reinforcement learning?"
@@ -549,7 +549,7 @@ User Query: "What is reinforcement learning?"
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -559,13 +559,13 @@ User Query: "What is reinforcement learning?"
 
 ---
 
-## 📄 License
+## License
 
 MIT License — see LICENSE file.
 
 ---
 
-## 📚 References
+## References
 
 1. Reimers, N. & Gurevych, I. (2019). *Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks*
 2. Johnson, J. et al. (2019). *Billion-scale similarity search with GPUs* (FAISS)
