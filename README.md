@@ -515,16 +515,16 @@ User Query: "What is reinforcement learning?"
 └────────────────────────────────────────────┘
     │
     ▼
-┌─ SEARCH ENGINE ────────────────────────────┐
-│  index: HNSW (m=32, ef_search=64)          │
-│  query: [0.12, -0.34, ..., 0.56]           │
-│  top_k: 5                                  │
-│  results:                                  │
-│    1. "What is RL?"              (0.93)    │
-│    2. "Explain reinforcement learning" (0.89)
-│    3. "How does RL work?"        (0.81)    │
-│  latency: 2ms                              │
-└─────────────────────────────────────────────┘
+┌─ SEARCH ENGINE ───────────────────────────────┐
+│  index: HNSW (m=32, ef_search=64)             │
+│  query: [0.12, -0.34, ..., 0.56]              │
+│  top_k: 5                                     │
+│  results:                                     │
+│    1. "What is RL?"              (0.93)       │
+│    2. "Explain reinforcement learning" (0.89) │
+│    3. "How does RL work?"        (0.81)       │
+│  latency: 2ms                                 │
+└───────────────────────────────────────────────┘
     │
     ▼
 ┌─ DECISION POLICY ──────────────────────────┐
