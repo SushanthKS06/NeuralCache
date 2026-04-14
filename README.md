@@ -23,53 +23,53 @@ Neural Cache intercepts queries to LLM-based systems, encodes them into embeddin
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        NEURAL CACHE SYSTEM                       │
-│                                                                   │
-│  ┌──────────┐    ┌──────────────┐    ┌──────────────────────┐    │
-│  │  QUERY   │───▶│   QUERY      │───▶│   SIMILARITY         │    │
-│  │  INPUT   │    │   ENCODER    │    │   SEARCH ENGINE      │    │
-│  │          │    │ (MiniLM/MPNet│    │   (FAISS HNSW/IVF)   │    │
-│  └──────────┘    │  Embedding)  │    │                      │    │
-│                  └──────────────┘    └──────────┬───────────┘    │
-│                                                  │                │
-│                                                  ▼                │
-│                                        ┌──────────────────────┐   │
-│                   ┌───────────────────▶│   CACHE DECISION     │   │
-│                   │                    │   POLICY             │   │
-│                   │                    │                      │   │
-│                   │                    │  Threshold / Adaptive│   │
-│                   │                    │  / Learned Scoring   │   │
-│                   │                    └──┬────────┬──────────┘   │
-│                   │                       │        │              │
-│                   │              ┌────────┘        └────────┐     │
-│                   │              ▼                          ▼     │
-│                   │   ┌──────────────────┐    ┌───────────────┐  │
-│                   │   │   HIT            │    │   MISS         │  │
-│                   │   │   (return cached)│    │   (call LLM)   │  │
-│                   │   │                  │    │                │  │
-│                   │   │  ┌────────────┐  │    │  ┌──────────┐ │  │
-│                   │   │  │ Adaptation │  │    │  │  LLM     │ │  │
-│                   │   │  │   Layer    │  │    │  │ Fallback │ │  │
-│                   │   │  └────────────┘  │    │  └────┬─────┘ │  │
-│                   │   └──────────────────┘    │       │       │  │
-│                   │                           │       ▼       │  │
-│                   │                           │  ┌──────────┐ │  │
-│                   │                           │  │  STORE   │ │  │
-│                   │                           │  │  RESULT  │ │  │
-│                   │                           │  └──────────┘ │  │
-│                   │                           └───────┬───────┘  │
-│                   │                                   │          │
-│                   └───────────────────┬───────────────┘          │
-│                                       ▼                           │
-│                   ┌──────────────────────────────────────┐        │
-│                   │   CACHE STORAGE (In-Memory / SQLite) │        │
-│                   │   + EVICTION MANAGER (LRU/LFU/TTL)   │        │
-│                   └──────────────────────────────────────┘        │
-│                                                                   │
-│                   ┌──────────────────────────────────────┐        │
-│                   │   METRICS & LOGGING                  │        │
-│                   │   (Prometheus + Structured Logs)     │        │
-│                   └──────────────────────────────────────┘        │
+│                        NEURAL CACHE SYSTEM                      │
+│                                                                 │
+│  ┌──────────┐    ┌──────────────┐    ┌──────────────────────┐   │
+│  │  QUERY   │───▶│   QUERY      │──▶│   SIMILARITY         │   │
+│  │  INPUT   │    │   ENCODER    │    │   SEARCH ENGINE      │   │
+│  │          │    │ (MiniLM/MPNet│    │   (FAISS HNSW/IVF)   │   │
+│  └──────────┘    │  Embedding)  │    │                      │   │
+│                  └──────────────┘    └──────────┬───────────┘   │
+│                                                 │               │
+│                                                 ▼               │
+│                                        ┌──────────────────────┐ │
+│                   ┌──────────────────▶│   CACHE DECISION     │  │
+│                   │                    │   POLICY             │ │
+│                   │                    │                      │ │
+│                   │                    │  Threshold / Adaptive│ │
+│                   │                    │  / Learned Scoring   │ │
+│                   │                    └──┬────────┬──────────┘ │
+│                   │                       │        │            │
+│                   │              ┌────────┘        └────────┐   │
+│                   │              ▼                          ▼   │
+│                   │   ┌──────────────────┐    ┌───────────────┐ │
+│                   │   │   HIT            │    │   MISS        │ │
+│                   │   │   (return cached)│    │   (call LLM)  │ │
+│                   │   │                  │    │               │ │
+│                   │   │  ┌────────────┐  │    │  ┌──────────┐ │ │
+│                   │   │  │ Adaptation │  │    │  │  LLM     │ │ │
+│                   │   │  │   Layer    │  │    │  │ Fallback │ │ │
+│                   │   │  └────────────┘  │    │  └────┬─────┘ │ │
+│                   │   └──────────────────┘    │       │       │ │
+│                   │                           │       ▼       │ │
+│                   │                           │  ┌──────────┐ │ │
+│                   │                           │  │  STORE   │ │ │
+│                   │                           │  │  RESULT  │ │ │
+│                   │                           │  └──────────┘ │ │
+│                   │                           └───────┬───────┘ │
+│                   │                                   │         │
+│                   └───────────────────┬───────────────┘         │
+│                                       ▼                         │
+│                   ┌──────────────────────────────────────┐      │
+│                   │   CACHE STORAGE (In-Memory / SQLite) │      │
+│                   │   + EVICTION MANAGER (LRU/LFU/TTL)   │      │
+│                   └──────────────────────────────────────┘      │
+│                                                                 │
+│                   ┌──────────────────────────────────────┐      │
+│                   │   METRICS & LOGGING                  │      │
+│                   │   (Prometheus + Structured Logs)     │      │
+│                   └──────────────────────────────────────┘      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -509,10 +509,10 @@ User Query: "What is reinforcement learning?"
     ▼
 ┌─ ENCODER ──────────────────────────────────┐
 │  model: all-MiniLM-L6-v2                   │
-│  input: "What is reinforcement learning?"   │
+│  input: "What is reinforcement learning?"  │
 │  output: [0.12, -0.34, ..., 0.56] (384d)   │
 │  latency: 8ms                              │
-└─────────────────────────────────────────────┘
+└────────────────────────────────────────────┘
     │
     ▼
 ┌─ SEARCH ENGINE ────────────────────────────┐
@@ -534,7 +534,7 @@ User Query: "What is reinforcement learning?"
 │  0.93 ≥ 0.95 (high_conf) → NO adaptation   │
 │  action: HIT                               │
 │  latency: 0.1ms                            │
-└─────────────────────────────────────────────┘
+└────────────────────────────────────────────┘
     │
     ▼
 ┌─ RESPONSE ─────────────────────────────────┐
@@ -542,9 +542,9 @@ User Query: "What is reinforcement learning?"
 │   machine learning where an agent learns   │
 │   to make decisions by interacting with    │
 │   an environment..."                       │
-│  total latency: 10.1ms (vs ~500ms LLM)    │
+│  total latency: 10.1ms (vs ~500ms LLM)     │
 │  latency reduction: 98%                    │
-└─────────────────────────────────────────────┘
+└────────────────────────────────────────────┘
 ```
 
 ---
