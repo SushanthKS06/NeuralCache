@@ -19,6 +19,7 @@ class LLMClient(ABC):
         max_tokens: int = 1024,
         temperature: float = 0.7,
     ) -> tuple[str, dict[str, Any]]:
+        pass
 
 class OpenAIClient(LLMClient):
 

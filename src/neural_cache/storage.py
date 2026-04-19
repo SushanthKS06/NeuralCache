@@ -17,36 +17,47 @@ class CacheStorage(ABC):
 
     @abstractmethod
     def put(self, entry: CacheEntry) -> None:
+        pass
 
     @abstractmethod
     def get(self, entry_id: str) -> CacheEntry | None:
+        pass
 
     @abstractmethod
     def get_all(self, limit: int | None = None) -> list[CacheEntry]:
+        pass
 
     @abstractmethod
     def delete(self, entry_id: str) -> bool:
+        pass
 
     @abstractmethod
     def delete_batch(self, entry_ids: list[str]) -> int:
+        pass
 
     @abstractmethod
     def count(self) -> int:
+        pass
 
     @abstractmethod
     def clear(self) -> None:
+        pass
 
     @abstractmethod
     def get_embeddings_batch(self, entry_ids: list[str]) -> dict[str, list[float]]:
+        pass
 
     @abstractmethod
     def update_access(self, entry_id: str) -> None:
+        pass
 
     @abstractmethod
     def update_quality(self, entry_id: str, score: float) -> None:
+        pass
 
     @abstractmethod
     def close(self) -> None:
+        pass
 
 class InMemoryStorage(CacheStorage):
 
