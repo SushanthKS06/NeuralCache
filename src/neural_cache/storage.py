@@ -158,7 +158,26 @@ class InMemoryStorage(CacheStorage):
 
 class SQLiteStorage(CacheStorage):
 
-    CREATE_TABLES_SQL =
+    CREATE_TABLES_SQL = """
+    CREATE TABLE IF NOT EXISTS cache_entries (
+        entry_id TEXT PRIMARY KEY,
+        query TEXT,
+        response TEXT,
+        response_metadata TEXT,
+        embedding_model TEXT,
+        created_at REAL,
+        last_accessed REAL,
+        access_count INTEGER,
+        quality_score REAL,
+        status TEXT,
+        tags TEXT,
+        metadata TEXT
+    );
+    CREATE TABLE IF NOT EXISTS embeddings (
+        entry_id TEXT PRIMARY KEY,
+        vector BLOB
+    );
+    """
 
     def __init__(self, config: StorageConfig):
         import sqlite3
@@ -185,7 +204,13 @@ class SQLiteStorage(CacheStorage):
             embedding_blob = np.array(entry.embedding, dtype=np.float32).tobytes()
 
             self._conn.execute(
-                ,
+                """
+                INSERT OR REPLACE INTO cache_entries (
+                    entry_id, query, response, response_metadata,
+                    embedding_model, created_at, last_accessed,
+                    access_count, quality_score, status, tags, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
                 (
                     entry.entry_id,
                     entry.query,
@@ -305,7 +330,7 @@ class SQLiteStorage(CacheStorage):
     def update_access(self, entry_id: str) -> None:
         with self._lock:
             self._conn.execute(
-                ,
+                "UPDATE cache_entries SET last_accessed = ?, access_count = access_count + 1 WHERE entry_id = ?",
                 (time.time(), entry_id),
             )
             self._conn.commit()
@@ -314,7 +339,7 @@ class SQLiteStorage(CacheStorage):
         with self._lock:
 
             self._conn.execute(
-                ,
+                "UPDATE cache_entries SET quality_score = ? WHERE entry_id = ?",
                 (score, entry_id),
             )
             self._conn.commit()
