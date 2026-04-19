@@ -15,10 +15,13 @@ from neural_cache.models import (
     SearchResult,
 )
 
+RERANK_WEIGHT_FAISS = 0.4
+RERANK_WEIGHT_CROSS = 0.6
+
+
 class CacheDecisionPolicy:
     def __init__(self, config: DecisionConfig):
         self.config = config
-
         self._feedback_history: deque[tuple[float, bool, float]] = deque(
             maxlen=config.adaptive_window_size
         )
@@ -36,21 +39,22 @@ class CacheDecisionPolicy:
         self._total_decisions += 1
 
         if not search_results:
-            decision = self._make_miss_decision(time.monotonic() - start_time)
-            return decision
+            return self._make_miss_decision(time.monotonic() - start_time)
 
         best_result = search_results[0]
         similarity = best_result.similarity_score
-        if best_result.rerank_score is not None and self.config.enable_reranking:
-
-            effective_score = 0.4 * similarity + 0.6 * best_result.rerank_score
+        if best_result.rerank_score is not None:
+            effective_score = (
+                RERANK_WEIGHT_FAISS * similarity
+                + RERANK_WEIGHT_CROSS * best_result.rerank_score
+            )
         else:
             effective_score = similarity
 
         should_explore = self._should_explore()
         if should_explore:
             self._exploration_count += 1
-            decision = CacheDecision(
+            return CacheDecision(
                 action=CacheAction.MISS,
                 confidence=0.0,
                 similarity_score=similarity,
@@ -58,7 +62,6 @@ class CacheDecisionPolicy:
                 should_explore=True,
                 decision_latency_ms=(time.monotonic() - start_time) * 1000,
             )
-            return decision
 
         if self.config.strategy == DecisionStrategy.FIXED_THRESHOLD:
             decision = self._fixed_threshold_decision(
@@ -86,7 +89,6 @@ class CacheDecisionPolicy:
         quality_score: float,
     ) -> None:
         self._feedback_history.append((similarity, was_good, quality_score))
-
         if len(self._feedback_history) >= self.config.adaptive_window_size:
             self._recalibrate_threshold()
 
@@ -144,7 +146,6 @@ class CacheDecisionPolicy:
         latency: float,
     ) -> CacheDecision:
         if len(self._feedback_history) < self.config.min_feedback_samples:
-
             return self._fixed_threshold_decision(
                 effective_score, raw_similarity, entry, latency
             )
@@ -160,8 +161,10 @@ class CacheDecisionPolicy:
             hit_rate = np.mean([int(g) for g, _ in similar_feedback])
             predicted_reliability = 0.5 * hit_rate + 0.5 * avg_quality
 
-            if predicted_reliability >= 0.7:
-                action = CacheAction.HIT if predicted_reliability >= 0.85 else CacheAction.HIT_WITH_ADAPTATION
+            if predicted_reliability >= 0.85:
+                action = CacheAction.HIT
+            elif predicted_reliability >= 0.7:
+                action = CacheAction.HIT_WITH_ADAPTATION
             else:
                 action = CacheAction.MISS
         else:

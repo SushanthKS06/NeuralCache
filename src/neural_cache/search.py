@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from neural_cache.config import SearchConfig
 from neural_cache.models import CacheEntry, SearchResult
 
+
 class SimilaritySearchEngine:
     def __init__(self, config: SearchConfig, embedding_dim: int):
         self.config = config
@@ -21,6 +22,7 @@ class SimilaritySearchEngine:
         self._next_id = 0
         self._is_trained = False
         self._reranker = None
+        self._needs_rebuild = False
         if config.enable_reranking:
             self._load_reranker()
 
@@ -36,21 +38,17 @@ class SimilaritySearchEngine:
 
         if self.config.index_type == "Flat":
             index = faiss.IndexFlatIP(dim)
-
         elif self.config.index_type == "IVF":
             quantizer = faiss.IndexFlatIP(dim)
             nlist = min(self.config.nlist, 1000)
             index = faiss.IndexIVFFlat(
                 quantizer, dim, nlist, faiss.METRIC_INNER_PRODUCT
             )
-
         elif self.config.index_type == "HNSW":
-            index = faiss.IndexHNSWFlat(dim, self.config.hnsw_m)
+            index = faiss.IndexHNSWFlat(dim, self.config.hnsw_m, faiss.METRIC_INNER_PRODUCT)
             index.hnsw.efConstruction = self.config.hnsw_ef_construction
-
         elif self.config.index_type == "LSH":
-            index = faiss.IndexLSH(dim, nbits=dim // 2)
-
+            index = faiss.IndexLSH(dim, dim * 2)
         else:
             raise ValueError(f"Unknown index type: {self.config.index_type}")
 
@@ -59,9 +57,7 @@ class SimilaritySearchEngine:
     def initialize_index(self) -> None:
         with self._lock:
             self._index = self._build_index()
-
             if self.config.index_type == "IVF":
-
                 self._is_trained = False
             else:
                 self._is_trained = True
@@ -79,14 +75,10 @@ class SimilaritySearchEngine:
                 self.initialize_index()
 
             if self.config.index_type == "IVF" and not self._is_trained:
-                if self._index.ntotal >= self.config.nlist:
+                if len(embeddings) >= self.config.nlist:
                     self._index.train(embeddings)
                     self._is_trained = True
-                else:
 
-                    pass
-
-            faiss_ids = np.arange(self._next_id, self._next_id + len(entries))
             self._index.add(embeddings)
 
             for i, entry in enumerate(entries):
@@ -95,17 +87,16 @@ class SimilaritySearchEngine:
                 self._reverse_id_map[entry.entry_id] = faiss_id
 
             self._next_id += len(entries)
-
             self._set_search_params()
 
     def rebuild_index(self, entries: list[CacheEntry]) -> None:
-
         with self._lock:
             self._index = self._build_index()
             self._id_map.clear()
             self._reverse_id_map.clear()
             self._next_id = 0
             self._is_trained = False
+            self._needs_rebuild = False
 
             if not entries:
                 return
@@ -132,22 +123,20 @@ class SimilaritySearchEngine:
         query_embedding: NDArray[np.float32],
         top_k: int | None = None,
     ) -> list[tuple[str, float]]:
-
         if self._index is None or self._index.ntotal == 0:
             return []
 
         top_k = top_k or self.config.top_k
 
         with self._lock:
-
             if query_embedding.ndim == 1:
                 query_embedding = query_embedding.reshape(1, -1)
 
             actual_k = min(top_k, self._index.ntotal)
-
             self._set_search_params()
-
             distances, indices = self._index.search(query_embedding, actual_k)
+
+        is_l2 = self.config.index_type == "LSH"
 
         results = []
         for i in range(actual_k):
@@ -156,6 +145,9 @@ class SimilaritySearchEngine:
 
             if faiss_id == -1:
                 continue
+
+            if is_l2:
+                score = 1.0 / (1.0 + score)
 
             entry_id = self._id_map.get(faiss_id)
             if entry_id is not None:
@@ -170,12 +162,10 @@ class SimilaritySearchEngine:
         entries: dict[str, CacheEntry],
         top_k: int | None = None,
     ) -> list[SearchResult]:
-
         initial_k = (top_k or self.config.top_k) * 3
         raw_results = self.search(query_embedding, top_k=initial_k)
 
         if not raw_results or self._reranker is None:
-
             return [
                 SearchResult(
                     entry=entries[eid],
@@ -183,6 +173,7 @@ class SimilaritySearchEngine:
                     rank=i,
                 )
                 for i, (eid, score) in enumerate(raw_results)
+                if eid in entries
             ]
 
         pairs = [
@@ -197,12 +188,12 @@ class SimilaritySearchEngine:
         rerank_scores = self._reranker.predict(pairs)
 
         search_results = []
-        for i, (eid, faiss_score) in enumerate(raw_results):
+        valid_idx = 0
+        for eid, faiss_score in raw_results:
             if eid not in entries:
                 continue
-            rr_score = float(rerank_scores[i]) if i < len(rerank_scores) else 0.0
-
-            combined = 0.4 * faiss_score + 0.6 * rr_score
+            rr_score = float(rerank_scores[valid_idx]) if valid_idx < len(rerank_scores) else 0.0
+            valid_idx += 1
             search_results.append(
                 SearchResult(
                     entry=entries[eid],
@@ -223,21 +214,19 @@ class SimilaritySearchEngine:
         return search_results[: (top_k or self.config.top_k)]
 
     def remove_entries(self, entry_ids: list[str]) -> None:
-
         with self._lock:
             for eid in entry_ids:
                 faiss_id = self._reverse_id_map.pop(eid, None)
                 if faiss_id is not None:
                     self._id_map.pop(faiss_id, None)
+            self._needs_rebuild = True
 
     def size(self) -> int:
-
         if self._index is None:
             return 0
         return self._index.ntotal
 
     def _set_search_params(self) -> None:
-
         if self._index is None:
             return
         if self.config.index_type == "HNSW":
@@ -252,7 +241,6 @@ class SimilaritySearchEngine:
             )
 
     def get_stats(self) -> dict:
-
         if self._index is None:
             return {"status": "not_initialized"}
 
@@ -261,6 +249,7 @@ class SimilaritySearchEngine:
             "total_vectors": self._index.ntotal,
             "embedding_dim": self.embedding_dim,
             "is_trained": self._is_trained,
+            "needs_rebuild": self._needs_rebuild,
         }
 
         if self.config.index_type == "HNSW":

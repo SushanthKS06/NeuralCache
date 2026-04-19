@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import threading
@@ -8,45 +7,48 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import orjson
 
 from neural_cache.config import StorageConfig, StorageBackend
 from neural_cache.models import CacheEntry, EntryStatus
 
+
 class CacheStorage(ABC):
 
     @abstractmethod
-    def put(self, entry: CacheEntry) -> None:
+    def put(self, entry: CacheEntry) -> None: ...
 
     @abstractmethod
-    def get(self, entry_id: str) -> CacheEntry | None:
+    def get(self, entry_id: str) -> CacheEntry | None: ...
 
     @abstractmethod
-    def get_all(self, limit: int | None = None) -> list[CacheEntry]:
+    def get_all(self, limit: int | None = None) -> list[CacheEntry]: ...
 
     @abstractmethod
-    def delete(self, entry_id: str) -> bool:
+    def delete(self, entry_id: str) -> bool: ...
 
     @abstractmethod
-    def delete_batch(self, entry_ids: list[str]) -> int:
+    def delete_batch(self, entry_ids: list[str]) -> int: ...
 
     @abstractmethod
-    def count(self) -> int:
+    def count(self) -> int: ...
 
     @abstractmethod
-    def clear(self) -> None:
+    def clear(self) -> None: ...
 
     @abstractmethod
-    def get_embeddings_batch(self, entry_ids: list[str]) -> dict[str, list[float]]:
+    def get_embeddings_batch(self, entry_ids: list[str]) -> dict[str, list[float]]: ...
 
     @abstractmethod
-    def update_access(self, entry_id: str) -> None:
+    def update_access(self, entry_id: str) -> None: ...
 
     @abstractmethod
-    def update_quality(self, entry_id: str, score: float) -> None:
+    def update_quality(self, entry_id: str, score: float) -> None: ...
 
     @abstractmethod
-    def close(self) -> None:
+    def close(self) -> None: ...
+
 
 class InMemoryStorage(CacheStorage):
 
@@ -57,7 +59,6 @@ class InMemoryStorage(CacheStorage):
 
     def put(self, entry: CacheEntry) -> None:
         with self._lock:
-
             if entry.entry_id in self._store:
                 self._store.pop(entry.entry_id)
             self._store[entry.entry_id] = entry
@@ -65,7 +66,6 @@ class InMemoryStorage(CacheStorage):
     def get(self, entry_id: str) -> CacheEntry | None:
         with self._lock:
             if entry_id in self._store:
-
                 self._store.move_to_end(entry_id)
                 return self._store[entry_id]
             return None
@@ -122,12 +122,10 @@ class InMemoryStorage(CacheStorage):
                 self._store[entry_id] = new
 
     def get_eviction_candidates_lru(self, n: int) -> list[str]:
-
         with self._lock:
             return list(self._store.keys())[:n]
 
     def get_eviction_candidates_lfu(self, n: int) -> list[str]:
-
         with self._lock:
             sorted_entries = sorted(
                 self._store.values(), key=lambda e: e.access_count
@@ -135,7 +133,6 @@ class InMemoryStorage(CacheStorage):
             return [e.entry_id for e in sorted_entries[:n]]
 
     def get_eviction_candidates_score(self, n: int) -> list[str]:
-
         with self._lock:
             sorted_entries = sorted(
                 self._store.values(), key=lambda e: e.quality_score
@@ -145,9 +142,52 @@ class InMemoryStorage(CacheStorage):
     def close(self) -> None:
         pass
 
+
 class SQLiteStorage(CacheStorage):
 
-    CREATE_TABLES_SQL =
+    CREATE_TABLES_SQL = """
+        CREATE TABLE IF NOT EXISTS cache_entries (
+            entry_id TEXT PRIMARY KEY,
+            query TEXT NOT NULL,
+            response TEXT NOT NULL,
+            response_metadata TEXT,
+            embedding_model TEXT,
+            created_at REAL,
+            last_accessed REAL,
+            access_count INTEGER DEFAULT 0,
+            quality_score REAL DEFAULT 1.0,
+            status TEXT DEFAULT 'active',
+            tags TEXT,
+            metadata TEXT
+        );
+        CREATE TABLE IF NOT EXISTS embeddings (
+            entry_id TEXT PRIMARY KEY,
+            vector BLOB NOT NULL,
+            FOREIGN KEY (entry_id) REFERENCES cache_entries(entry_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_status ON cache_entries(status);
+        CREATE INDEX IF NOT EXISTS idx_last_accessed ON cache_entries(last_accessed);
+        CREATE INDEX IF NOT EXISTS idx_quality_score ON cache_entries(quality_score);
+    """
+
+    INSERT_ENTRY_SQL = """
+        INSERT OR REPLACE INTO cache_entries
+        (entry_id, query, response, response_metadata, embedding_model,
+         created_at, last_accessed, access_count, quality_score, status, tags, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """
+
+    UPDATE_ACCESS_SQL = """
+        UPDATE cache_entries
+        SET last_accessed = ?, access_count = access_count + 1
+        WHERE entry_id = ?
+    """
+
+    UPDATE_QUALITY_SQL = """
+        UPDATE cache_entries
+        SET quality_score = 0.3 * ? + 0.7 * quality_score
+        WHERE entry_id = ?
+    """
 
     def __init__(self, config: StorageConfig):
         import sqlite3
@@ -166,15 +206,11 @@ class SQLiteStorage(CacheStorage):
         self._lock = threading.RLock()
 
     def put(self, entry: CacheEntry) -> None:
-        import sqlite3
-        import numpy as np
-
         with self._lock:
-
             embedding_blob = np.array(entry.embedding, dtype=np.float32).tobytes()
 
             self._conn.execute(
-                ,
+                self.INSERT_ENTRY_SQL,
                 (
                     entry.entry_id,
                     entry.query,
@@ -197,8 +233,6 @@ class SQLiteStorage(CacheStorage):
             self._conn.commit()
 
     def get(self, entry_id: str) -> CacheEntry | None:
-        import numpy as np
-
         with self._lock:
             row = self._conn.execute(
                 "SELECT * FROM cache_entries WHERE entry_id = ?", (entry_id,)
@@ -218,8 +252,6 @@ class SQLiteStorage(CacheStorage):
             return self._row_to_entry(row, embedding)
 
     def get_all(self, limit: int | None = None) -> list[CacheEntry]:
-        import numpy as np
-
         with self._lock:
             query = "SELECT * FROM cache_entries WHERE status = 'active'"
             if limit is not None:
@@ -279,8 +311,6 @@ class SQLiteStorage(CacheStorage):
             self._conn.commit()
 
     def get_embeddings_batch(self, entry_ids: list[str]) -> dict[str, list[float]]:
-        import numpy as np
-
         with self._lock:
             result = {}
             for eid in entry_ids:
@@ -294,16 +324,15 @@ class SQLiteStorage(CacheStorage):
     def update_access(self, entry_id: str) -> None:
         with self._lock:
             self._conn.execute(
-                ,
+                self.UPDATE_ACCESS_SQL,
                 (time.time(), entry_id),
             )
             self._conn.commit()
 
     def update_quality(self, entry_id: str, score: float) -> None:
         with self._lock:
-
             self._conn.execute(
-                ,
+                self.UPDATE_QUALITY_SQL,
                 (score, entry_id),
             )
             self._conn.commit()
@@ -333,8 +362,6 @@ class SQLiteStorage(CacheStorage):
             return [r[0] for r in rows]
 
     def _row_to_entry(self, row: tuple, embedding: list[float]) -> CacheEntry:
-        import orjson
-
         return CacheEntry(
             entry_id=row[0],
             query=row[1],
@@ -355,8 +382,8 @@ class SQLiteStorage(CacheStorage):
         with self._lock:
             self._conn.close()
 
-def create_storage(config: StorageConfig) -> CacheStorage:
 
+def create_storage(config: StorageConfig) -> CacheStorage:
     if config.backend == StorageBackend.IN_MEMORY:
         return InMemoryStorage(config)
     elif config.backend in (StorageBackend.SQLITE, StorageBackend.SQLITE_VEC):

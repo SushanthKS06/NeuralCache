@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 
+
 @dataclass
 class ExperimentResult:
     name: str
@@ -35,6 +36,7 @@ class ExperimentResult:
         with open(path) as f:
             data = json.load(f)
         return cls(**data)
+
 
 class ExperimentRunner:
     def __init__(self, output_dir: str | Path = "./experiment_results"):
@@ -72,7 +74,6 @@ class ExperimentRunner:
         llm_generate,
         test_queries: list[str],
     ) -> ExperimentResult:
-
         from neural_cache.cache import NeuralCache
         from neural_cache.config import CacheConfig
 
@@ -98,6 +99,7 @@ class ExperimentRunner:
                 hit_count += 1
 
         hit_rate = hit_count / len(test_queries) if test_queries else 0
+
         print("Measuring latency WITHOUT cache...")
         latencies_without_cache = []
         for q in test_queries:
@@ -140,16 +142,15 @@ class ExperimentRunner:
         llm_generate,
         test_queries: list[str],
     ) -> ExperimentResult:
-
         from neural_cache.cache import NeuralCache
-        from neural_cache.config import CacheConfig
+        from neural_cache.config import CacheConfig, DecisionConfig
 
         thresholds = np.arange(0.70, 0.99, 0.03)
         results_by_threshold = {}
         for threshold in thresholds:
             threshold = round(float(threshold), 2)
             config = CacheConfig.fast_production()
-            config.decision.similarity_threshold = threshold
+            config.decision = DecisionConfig(similarity_threshold=threshold)
             cache = NeuralCache(config)
             await cache.initialize()
             cache.set_llm_function(llm_generate)
@@ -176,6 +177,7 @@ class ExperimentRunner:
             cache.close()
             print(f"  Threshold {threshold:.2f}: hit_rate={hits/len(test_queries[:50]):.3f}, "
                   f"avg_latency={np.mean(latencies):.1f}ms")
+
         best_threshold = max(
             results_by_threshold.items(),
             key=lambda x: x[1]["hit_rate"]
@@ -183,7 +185,7 @@ class ExperimentRunner:
 
         return ExperimentResult(
             name="threshold_sensitivity",
-            parameters={"thresholds_tested": list(thresholds)},
+            parameters={"thresholds_tested": [round(float(t), 2) for t in thresholds]},
             metrics={
                 "best_threshold": float(best_threshold[0]),
                 "best_hit_rate": best_threshold[1]["hit_rate"],
@@ -196,15 +198,17 @@ class ExperimentRunner:
         llm_generate,
         test_queries: list[str],
     ) -> ExperimentResult:
-
         from neural_cache.cache import NeuralCache
-        from neural_cache.config import CacheConfig
+        from neural_cache.config import CacheConfig, StorageConfig, StorageBackend
 
         sizes = [100, 500, 1000, 2500, 5000, 10000]
         results_by_size = {}
         for size in sizes:
             config = CacheConfig.fast_production()
-            config.storage.max_entries = size
+            config.storage = StorageConfig(
+                backend=StorageBackend.IN_MEMORY,
+                max_entries=size,
+            )
             cache = NeuralCache(config)
             await cache.initialize()
             cache.set_llm_function(llm_generate)
@@ -227,6 +231,7 @@ class ExperimentRunner:
 
             cache.close()
             print(f"  Size {size}: hit_rate={hit_rate:.3f}")
+
         return ExperimentResult(
             name="cache_size_impact",
             parameters={"sizes_tested": sizes},
@@ -238,18 +243,28 @@ class ExperimentRunner:
         llm_generate,
         test_queries: list[str],
     ) -> ExperimentResult:
-
         from neural_cache.cache import NeuralCache
-        from neural_cache.config import CacheConfig, EvictionPolicy
+        from neural_cache.config import (
+            CacheConfig,
+            EvictionConfig,
+            EvictionPolicy,
+            StorageConfig,
+            StorageBackend,
+        )
 
         policies = [EvictionPolicy.LRU, EvictionPolicy.LFU, EvictionPolicy.SCORE_BASED]
         results = {}
         for policy in policies:
             config = CacheConfig.fast_production()
-            config.storage.max_entries = 500
-            config.eviction.policy = policy
-            config.eviction.high_watermark = 0.8
-            config.eviction.low_watermark = 0.6
+            config.storage = StorageConfig(
+                backend=StorageBackend.IN_MEMORY,
+                max_entries=500,
+            )
+            config.eviction = EvictionConfig(
+                policy=policy,
+                high_watermark=0.8,
+                low_watermark=0.6,
+            )
 
             cache = NeuralCache(config)
             await cache.initialize()
@@ -273,6 +288,7 @@ class ExperimentRunner:
 
             cache.close()
             print(f"  Policy {policy.value}: hit_rate={hit_rate:.3f}")
+
         return ExperimentResult(
             name="eviction_policy_comparison",
             parameters={"policies": [p.value for p in policies]},
@@ -284,9 +300,8 @@ class ExperimentRunner:
         llm_generate,
         test_queries: list[str],
     ) -> ExperimentResult:
-
         from neural_cache.cache import NeuralCache
-        from neural_cache.config import CacheConfig, EmbeddingModel
+        from neural_cache.config import CacheConfig, EncoderConfig, EmbeddingModel
 
         models = [
             EmbeddingModel.ALL_MINILM_L6_V2,
@@ -295,7 +310,7 @@ class ExperimentRunner:
         results = {}
         for model in models:
             config = CacheConfig()
-            config.encoder.model_name = model
+            config.encoder = EncoderConfig(model_name=model)
             cache = NeuralCache(config)
             await cache.initialize()
             cache.set_llm_function(llm_generate)
@@ -322,6 +337,7 @@ class ExperimentRunner:
 
             cache.close()
             print(f"  Model {model.value.split('/')[-1]}: hit_rate={hit_rate:.3f}")
+
         return ExperimentResult(
             name="embedding_model_comparison",
             parameters={"models": [m.value for m in models]},
@@ -369,7 +385,7 @@ class ExperimentRunner:
     def _print_metrics(self, result: ExperimentResult) -> None:
         print(f"\nExperiment: {result.name}")
         print(f"Parameters: {json.dumps(result.parameters, indent=2)}")
-        print(f"Metrics:")
+        print("Metrics:")
         for key, value in result.metrics.items():
             if isinstance(value, dict):
                 print(f"  {key}:")

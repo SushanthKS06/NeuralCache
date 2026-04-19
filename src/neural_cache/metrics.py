@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import structlog
@@ -11,9 +11,10 @@ import structlog
 from neural_cache.config import MetricsConfig
 from neural_cache.models import CacheAction, CacheResult, MetricsSnapshot
 
+
 @dataclass
 class LatencyRecord:
-
+    timestamp: float
     total_ms: float
     embedding_ms: float = 0.0
     search_ms: float = 0.0
@@ -21,22 +22,19 @@ class LatencyRecord:
     adaptation_ms: float = 0.0
     llm_ms: float = 0.0
 
+
 class MetricsCollector:
     def __init__(self, config: MetricsConfig):
         self.config = config
         self._lock = threading.Lock()
 
-        window = config.sliding_window_seconds
-
-        self._requests: deque[float] = deque(maxlen=1_000_000)
         self._timestamps: deque[float] = deque(maxlen=1_000_000)
-
         self._actions: deque[CacheAction] = deque(maxlen=1_000_000)
         self._latencies: deque[LatencyRecord] = deque(maxlen=1_000_000)
-        self._similarity_scores: deque[float] = deque(maxlen=1_000_000)
-        self._quality_scores: deque[float] = deque(maxlen=1_000_000)
+        self._similarity_scores: deque[tuple[float, float]] = deque(maxlen=1_000_000)
+        self._quality_scores: deque[tuple[float, float]] = deque(maxlen=1_000_000)
 
-        self._prometheus_registry = None
+        self._registry = None
         if config.enable_prometheus:
             self._setup_prometheus()
 
@@ -50,11 +48,11 @@ class MetricsCollector:
         with self._lock:
             now = time.time()
             self._timestamps.append(now)
-            self._requests.append(1.0)
             self._actions.append(result.action)
 
             if latency_breakdown:
                 self._latencies.append(LatencyRecord(
+                    timestamp=now,
                     total_ms=result.total_latency_ms,
                     embedding_ms=latency_breakdown.get("embedding", 0.0),
                     search_ms=latency_breakdown.get("search", 0.0),
@@ -64,13 +62,13 @@ class MetricsCollector:
                 ))
 
             if result.similarity_score > 0:
-                self._similarity_scores.append(result.similarity_score)
+                self._similarity_scores.append((now, result.similarity_score))
 
             self._update_prometheus(result)
 
     def record_quality_score(self, score: float) -> None:
         with self._lock:
-            self._quality_scores.append(score)
+            self._quality_scores.append((time.time(), score))
 
     def get_snapshot(self) -> MetricsSnapshot:
         with self._lock:
@@ -81,9 +79,15 @@ class MetricsCollector:
                 a for a, t in zip(self._actions, self._timestamps)
                 if t >= cutoff
             ]
-            latencies_in_window = list(self._latencies)
-            similarity_in_window = list(self._similarity_scores)
-            quality_in_window = list(self._quality_scores)
+            latencies_in_window = [
+                lr for lr in self._latencies if lr.timestamp >= cutoff
+            ]
+            similarity_in_window = [
+                s for t, s in self._similarity_scores if t >= cutoff
+            ]
+            quality_in_window = [
+                s for t, s in self._quality_scores if t >= cutoff
+            ]
 
             total = len(actions_in_window)
             hits = actions_in_window.count(CacheAction.HIT)
@@ -92,19 +96,19 @@ class MetricsCollector:
             errors = actions_in_window.count(CacheAction.ERROR)
 
             if latencies_in_window:
-                total_latencies = sorted([l.total_ms for l in latencies_in_window])
+                total_latencies = sorted([lr.total_ms for lr in latencies_in_window])
                 avg_latency = sum(total_latencies) / len(total_latencies)
                 p50 = self._percentile(total_latencies, 50)
                 p95 = self._percentile(total_latencies, 95)
                 p99 = self._percentile(total_latencies, 99)
 
-                decision_latencies = [l.decision_ms for l in latencies_in_window]
+                decision_latencies = [lr.decision_ms for lr in latencies_in_window]
                 avg_decision_ms = sum(decision_latencies) / len(decision_latencies)
 
-                embedding_latencies = [l.embedding_ms for l in latencies_in_window]
+                embedding_latencies = [lr.embedding_ms for lr in latencies_in_window]
                 avg_embedding_ms = sum(embedding_latencies) / len(embedding_latencies)
 
-                search_latencies = [l.search_ms for l in latencies_in_window]
+                search_latencies = [lr.search_ms for lr in latencies_in_window]
                 avg_search_ms = sum(search_latencies) / len(search_latencies)
             else:
                 avg_latency = p50 = p95 = p99 = 0.0

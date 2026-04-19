@@ -7,6 +7,7 @@ from typing import Any
 
 from neural_cache.models import CacheEntry, SearchResult
 
+
 class BM25Index:
     def __init__(self, k1: float = 1.5, b: float = 0.75):
         self.k1 = k1
@@ -65,6 +66,7 @@ class BM25Index:
         text = text.lower()
         tokens = re.findall(r'\b\w{2,}\b', text)
         return tokens
+
 
 class HybridRetriever:
     def __init__(

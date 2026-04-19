@@ -6,11 +6,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+
 class CacheAction(str, Enum):
     HIT = "hit"
     HIT_WITH_ADAPTATION = "hit_with_adaptation"
     MISS = "miss"
     ERROR = "error"
+
 
 class EntryStatus(str, Enum):
     ACTIVE = "active"
@@ -18,31 +20,21 @@ class EntryStatus(str, Enum):
     EVICTED = "evicted"
     FLAGGED = "flagged"
 
+
 @dataclass(frozen=True)
 class CacheEntry:
     entry_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-
     query: str = ""
-
     embedding: list[float] = field(default_factory=list)
-
     response: str = ""
-
     response_metadata: dict[str, Any] = field(default_factory=dict)
-
     embedding_model: str = ""
-
     created_at: float = field(default_factory=time.time)
     last_accessed: float = field(default_factory=time.time)
-
     access_count: int = 0
-
     quality_score: float = 1.0
-
     status: EntryStatus = EntryStatus.ACTIVE
-
-    tags: set[str] = field(default_factory=set)
-
+    tags: frozenset[str] = field(default_factory=frozenset)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def record_access(self) -> CacheEntry:
@@ -81,12 +73,14 @@ class CacheEntry:
             metadata=self.metadata,
         )
 
+
 @dataclass
 class SearchResult:
     entry: CacheEntry
     similarity_score: float
     rank: int = 0
     rerank_score: float | None = None
+
 
 @dataclass
 class CacheDecision:
@@ -95,40 +89,31 @@ class CacheDecision:
     entry: CacheEntry | None = None
     similarity_score: float = 0.0
     reasoning: str = ""
-
     should_explore: bool = False
-
     decision_latency_ms: float = 0.0
+
 
 @dataclass
 class CacheResult:
     response: str
     action: CacheAction
-
     from_cache: bool
-
     similarity_score: float
-
     total_latency_ms: float
-
     cache_entry: CacheEntry | None = None
-
     adapted: bool = False
-
     request_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-
     metadata: dict[str, Any] = field(default_factory=dict)
+
 
 @dataclass
 class MetricsSnapshot:
     timestamp: float = field(default_factory=time.time)
-
     total_requests: int = 0
     cache_hits: int = 0
     cache_misses: int = 0
     cache_hit_with_adaptation: int = 0
     errors: int = 0
-
     avg_latency_ms: float = 0.0
     p50_latency_ms: float = 0.0
     p95_latency_ms: float = 0.0
@@ -136,12 +121,9 @@ class MetricsSnapshot:
     avg_cache_decision_latency_ms: float = 0.0
     avg_embedding_latency_ms: float = 0.0
     avg_search_latency_ms: float = 0.0
-
     cache_hit_rate: float = 0.0
-
     avg_quality_score: float = 0.0
     avg_similarity_score: float = 0.0
-
     cache_size: int = 0
     eviction_count: int = 0
 

@@ -9,6 +9,7 @@ from neural_cache.config import EvictionConfig, EvictionPolicy
 if TYPE_CHECKING:
     from neural_cache.storage import CacheStorage
 
+
 class EvictionManager:
     def __init__(self, storage: CacheStorage, config: EvictionConfig):
         self.storage = storage
@@ -41,7 +42,7 @@ class EvictionManager:
 
             if n_to_evict <= 0:
                 return 0
-            n_to_evict = max(n_to_evict, self.config.eviction_batch_size)
+            n_to_evict = min(n_to_evict, self.config.eviction_batch_size)
 
             candidates = self._get_eviction_candidates(n_to_evict)
 

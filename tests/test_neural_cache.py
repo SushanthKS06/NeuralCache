@@ -26,9 +26,9 @@ from neural_cache.models import (
     MetricsSnapshot,
 )
 
+
 @pytest.fixture
 def sample_entries():
-
     return [
         CacheEntry(
             query="What is machine learning?",
@@ -50,18 +50,18 @@ def sample_entries():
         ),
     ]
 
+
 @pytest.fixture
 def mock_llm():
-
     async def generate(query: str) -> tuple[str, dict]:
         await asyncio.sleep(0.01)
         return f"Mock response to: {query}", {"model": "mock"}
     return generate
 
+
 class TestQueryEncoder:
 
     def test_encoder_initialization(self):
-
         from neural_cache.encoder import QueryEncoder
 
         config = EncoderConfig(
@@ -71,7 +71,6 @@ class TestQueryEncoder:
         assert encoder.dimension == 384
 
     def test_encode_single(self):
-
         from neural_cache.encoder import QueryEncoder
 
         encoder = QueryEncoder(EncoderConfig())
@@ -82,7 +81,6 @@ class TestQueryEncoder:
         assert embedding.dtype == np.float32
 
     def test_encode_batch(self):
-
         from neural_cache.encoder import QueryEncoder
 
         encoder = QueryEncoder(EncoderConfig())
@@ -93,7 +91,6 @@ class TestQueryEncoder:
         assert embeddings.shape == (3, encoder.dimension)
 
     def test_normalize_embeddings(self):
-
         from neural_cache.encoder import QueryEncoder
 
         encoder = QueryEncoder(EncoderConfig(normalize=True))
@@ -104,7 +101,6 @@ class TestQueryEncoder:
         assert abs(norm - 1.0) < 1e-5
 
     def test_similarity_computation(self):
-
         from neural_cache.encoder import QueryEncoder
 
         encoder = QueryEncoder(EncoderConfig(normalize=True))
@@ -113,10 +109,10 @@ class TestQueryEncoder:
         sim = encoder.similarity("What is ML?", "What is machine learning?")
         assert 0.0 <= sim <= 1.0
 
+
 class TestInMemoryStorage:
 
     def test_put_and_get(self, sample_entries):
-
         from neural_cache.storage import InMemoryStorage
 
         storage = InMemoryStorage(StorageConfig())
@@ -127,14 +123,12 @@ class TestInMemoryStorage:
         assert retrieved.query == sample_entries[0].query
 
     def test_get_nonexistent(self):
-
         from neural_cache.storage import InMemoryStorage
 
         storage = InMemoryStorage(StorageConfig())
         assert storage.get("nonexistent") is None
 
     def test_delete(self, sample_entries):
-
         from neural_cache.storage import InMemoryStorage
 
         storage = InMemoryStorage(StorageConfig())
@@ -143,7 +137,6 @@ class TestInMemoryStorage:
         assert storage.get(sample_entries[0].entry_id) is None
 
     def test_delete_batch(self, sample_entries):
-
         from neural_cache.storage import InMemoryStorage
 
         storage = InMemoryStorage(StorageConfig())
@@ -156,7 +149,6 @@ class TestInMemoryStorage:
         assert storage.count() == 1
 
     def test_count(self, sample_entries):
-
         from neural_cache.storage import InMemoryStorage
 
         storage = InMemoryStorage(StorageConfig())
@@ -168,7 +160,6 @@ class TestInMemoryStorage:
         assert storage.count() == 3
 
     def test_clear(self, sample_entries):
-
         from neural_cache.storage import InMemoryStorage
 
         storage = InMemoryStorage(StorageConfig())
@@ -179,7 +170,6 @@ class TestInMemoryStorage:
         assert storage.count() == 0
 
     def test_update_access(self, sample_entries):
-
         from neural_cache.storage import InMemoryStorage
 
         storage = InMemoryStorage(StorageConfig())
@@ -194,7 +184,6 @@ class TestInMemoryStorage:
         assert entry.last_accessed > old_accessed
 
     def test_get_all(self, sample_entries):
-
         from neural_cache.storage import InMemoryStorage
 
         storage = InMemoryStorage(StorageConfig())
@@ -205,7 +194,6 @@ class TestInMemoryStorage:
         assert len(all_entries) == 3
 
     def test_get_embeddings_batch(self, sample_entries):
-
         from neural_cache.storage import InMemoryStorage
 
         storage = InMemoryStorage(StorageConfig())
@@ -216,11 +204,11 @@ class TestInMemoryStorage:
         embeddings = storage.get_embeddings_batch(ids)
         assert len(embeddings) == 2
 
+
 class TestSQLiteStorage:
 
     @pytest.fixture
     def sqlite_storage(self, tmp_path, sample_entries):
-
         from neural_cache.storage import SQLiteStorage
 
         db_path = str(tmp_path / "test.db")
@@ -237,27 +225,24 @@ class TestSQLiteStorage:
         storage.close()
 
     def test_put_and_get(self, sqlite_storage, sample_entries):
-
         retrieved = sqlite_storage.get(sample_entries[0].entry_id)
         assert retrieved is not None
         assert retrieved.query == sample_entries[0].query
 
     def test_count(self, sqlite_storage):
-
         assert sqlite_storage.count() == 3
 
     def test_delete(self, sqlite_storage, sample_entries):
-
         assert sqlite_storage.delete(sample_entries[0].entry_id) is True
         assert sqlite_storage.count() == 2
+
 
 class TestSimilaritySearchEngine:
 
     def test_flat_index(self, sample_entries):
-
         from neural_cache.search import SimilaritySearchEngine
 
-        config = SearchConfig(index_type="Flat")
+        config = SearchConfig(index_type="Flat", enable_reranking=False)
         engine = SimilaritySearchEngine(config, embedding_dim=384)
         engine.initialize_index()
         engine.add_entries(sample_entries)
@@ -267,10 +252,9 @@ class TestSimilaritySearchEngine:
         assert len(results) <= 3
 
     def test_hnsw_index(self, sample_entries):
-
         from neural_cache.search import SimilaritySearchEngine
 
-        config = SearchConfig(index_type="HNSW", hnsw_m=16)
+        config = SearchConfig(index_type="HNSW", hnsw_m=16, enable_reranking=False)
         engine = SimilaritySearchEngine(config, embedding_dim=384)
         engine.initialize_index()
         engine.add_entries(sample_entries)
@@ -280,10 +264,9 @@ class TestSimilaritySearchEngine:
         assert len(results) <= 3
 
     def test_empty_search(self):
-
         from neural_cache.search import SimilaritySearchEngine
 
-        config = SearchConfig(index_type="Flat")
+        config = SearchConfig(index_type="Flat", enable_reranking=False)
         engine = SimilaritySearchEngine(config, embedding_dim=384)
         engine.initialize_index()
 
@@ -292,10 +275,9 @@ class TestSimilaritySearchEngine:
         assert results == []
 
     def test_rebuild_index(self, sample_entries):
-
         from neural_cache.search import SimilaritySearchEngine
 
-        config = SearchConfig(index_type="Flat")
+        config = SearchConfig(index_type="Flat", enable_reranking=False)
         engine = SimilaritySearchEngine(config, embedding_dim=384)
         engine.rebuild_index(sample_entries)
 
@@ -304,10 +286,9 @@ class TestSimilaritySearchEngine:
         assert len(results) <= 3
 
     def test_get_stats(self, sample_entries):
-
         from neural_cache.search import SimilaritySearchEngine
 
-        config = SearchConfig(index_type="HNSW")
+        config = SearchConfig(index_type="HNSW", enable_reranking=False)
         engine = SimilaritySearchEngine(config, embedding_dim=384)
         engine.initialize_index()
         engine.add_entries(sample_entries)
@@ -316,10 +297,10 @@ class TestSimilaritySearchEngine:
         assert stats["total_vectors"] == 3
         assert stats["index_type"] == "HNSW"
 
+
 class TestCacheDecisionPolicy:
 
     def test_high_confidence_hit(self):
-
         from neural_cache.decision import CacheDecisionPolicy
 
         config = DecisionConfig(
@@ -336,7 +317,6 @@ class TestCacheDecisionPolicy:
         assert decision.confidence >= 0.95
 
     def test_hit_with_adaptation(self):
-
         from neural_cache.decision import CacheDecisionPolicy
 
         config = DecisionConfig(
@@ -352,7 +332,6 @@ class TestCacheDecisionPolicy:
         assert decision.action == CacheAction.HIT_WITH_ADAPTATION
 
     def test_miss(self):
-
         from neural_cache.decision import CacheDecisionPolicy
 
         config = DecisionConfig(similarity_threshold=0.85)
@@ -365,7 +344,6 @@ class TestCacheDecisionPolicy:
         assert decision.action == CacheAction.MISS
 
     def test_empty_results(self):
-
         from neural_cache.decision import CacheDecisionPolicy
 
         policy = CacheDecisionPolicy(DecisionConfig())
@@ -373,7 +351,6 @@ class TestCacheDecisionPolicy:
         assert decision.action == CacheAction.MISS
 
     def test_adaptive_threshold_recalibration(self):
-
         from neural_cache.decision import CacheDecisionPolicy
 
         config = DecisionConfig(
@@ -389,10 +366,10 @@ class TestCacheDecisionPolicy:
         stats = policy.get_stats()
         assert stats["feedback_samples"] == 20
 
+
 class TestEvictionManager:
 
     def test_lru_eviction(self, sample_entries):
-
         from neural_cache.storage import InMemoryStorage
         from neural_cache.eviction import EvictionManager
 
@@ -415,7 +392,6 @@ class TestEvictionManager:
         assert storage.count() == 4
 
     def test_should_evict(self):
-
         from neural_cache.storage import InMemoryStorage
         from neural_cache.eviction import EvictionManager
 
@@ -435,11 +411,11 @@ class TestEvictionManager:
 
         assert manager.should_evict() is True
 
+
 class TestNeuralCacheIntegration:
 
     @pytest.mark.asyncio
     async def test_full_pipeline_with_mock_llm(self, mock_llm):
-
         from neural_cache.cache import NeuralCache
 
         config = CacheConfig.fast_production()
@@ -458,7 +434,6 @@ class TestNeuralCacheIntegration:
 
     @pytest.mark.asyncio
     async def test_similar_query_retrieval(self, mock_llm):
-
         from neural_cache.cache import NeuralCache
 
         config = CacheConfig.fast_production()
@@ -476,7 +451,6 @@ class TestNeuralCacheIntegration:
 
     @pytest.mark.asyncio
     async def test_metrics_tracking(self, mock_llm):
-
         from neural_cache.cache import NeuralCache
 
         config = CacheConfig.fast_production()
@@ -491,7 +465,6 @@ class TestNeuralCacheIntegration:
 
     @pytest.mark.asyncio
     async def test_cache_disabled(self, mock_llm):
-
         from neural_cache.cache import NeuralCache
 
         config = CacheConfig()
@@ -508,7 +481,6 @@ class TestNeuralCacheIntegration:
 
     @pytest.mark.asyncio
     async def test_dry_run_mode(self, mock_llm):
-
         from neural_cache.cache import NeuralCache
 
         config = CacheConfig()
@@ -522,10 +494,10 @@ class TestNeuralCacheIntegration:
 
             assert not result.from_cache
 
+
 class TestDataModels:
 
     def test_cache_entry_creation(self):
-
         entry = CacheEntry(query="test", response="response")
         assert entry.entry_id is not None
         assert entry.access_count == 0
@@ -533,7 +505,6 @@ class TestDataModels:
         assert entry.status.value == "active"
 
     def test_cache_entry_record_access(self):
-
         entry = CacheEntry(query="test", response="response")
         updated = entry.record_access()
 
@@ -541,14 +512,12 @@ class TestDataModels:
         assert updated.last_accessed > entry.created_at
 
     def test_cache_entry_update_quality(self):
-
         entry = CacheEntry(query="test", response="response", quality_score=1.0)
         updated = entry.update_quality(0.5)
 
         assert abs(updated.quality_score - 0.85) < 1e-10
 
     def test_cache_result(self):
-
         result = CacheResult(
             response="test",
             action=CacheAction.HIT,
@@ -559,7 +528,6 @@ class TestDataModels:
         assert result.request_id is not None
 
     def test_metrics_snapshot_hit_rate(self):
-
         snapshot = MetricsSnapshot(
             total_requests=10,
             cache_hits=3,
@@ -568,10 +536,10 @@ class TestDataModels:
         )
         assert snapshot.hit_rate == 0.5
 
+
 class TestPerformance:
 
     def test_embedding_latency(self):
-
         from neural_cache.encoder import QueryEncoder
 
         encoder = QueryEncoder(EncoderConfig())
@@ -588,10 +556,9 @@ class TestPerformance:
         print(f"\nAvg embedding latency: {avg_latency:.1f}ms")
 
     def test_search_latency(self, sample_entries):
-
         from neural_cache.search import SimilaritySearchEngine
 
-        config = SearchConfig(index_type="HNSW")
+        config = SearchConfig(index_type="HNSW", enable_reranking=False)
         engine = SimilaritySearchEngine(config, embedding_dim=384)
         engine.initialize_index()
         engine.add_entries(sample_entries)
@@ -609,7 +576,6 @@ class TestPerformance:
         print(f"\nAvg search latency: {avg_latency:.2f}ms")
 
     def test_decision_latency(self):
-
         from neural_cache.decision import CacheDecisionPolicy
 
         policy = CacheDecisionPolicy(DecisionConfig())

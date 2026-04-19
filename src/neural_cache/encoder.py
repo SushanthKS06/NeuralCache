@@ -5,6 +5,7 @@ from numpy.typing import NDArray
 
 from neural_cache.config import EncoderConfig, EmbeddingModel
 
+
 class QueryEncoder:
     def __init__(self, config: EncoderConfig | None = None):
         self.config = config or EncoderConfig()
@@ -30,7 +31,7 @@ class QueryEncoder:
             device=self.config.device,
         )
         self._model.max_seq_length = self.config.max_seq_length
-        self._dimension = self._model.get_sentence_embedding_dimension()
+        self._dimension = self._model.get_embedding_dimension()
 
     def encode(
         self,
@@ -63,7 +64,13 @@ class QueryEncoder:
     ) -> float:
         emb1 = self.encode_single(query1)
         emb2 = self.encode_single(query2)
-        return float(np.dot(emb1, emb2))
+        sim = float(np.dot(emb1, emb2))
+        if not self.config.normalize:
+            norm1 = np.linalg.norm(emb1)
+            norm2 = np.linalg.norm(emb2)
+            if norm1 > 0 and norm2 > 0:
+                sim = sim / (norm1 * norm2)
+        return sim
 
     def get_model_info(self) -> dict:
         return {

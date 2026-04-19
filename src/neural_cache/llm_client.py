@@ -1,13 +1,12 @@
-
 from __future__ import annotations
 
-import time
 from abc import ABC, abstractmethod
 from typing import Any
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from neural_cache.config import LLMConfig
+
 
 class LLMClient(ABC):
 
@@ -18,7 +17,8 @@ class LLMClient(ABC):
         system_prompt: str = "",
         max_tokens: int = 1024,
         temperature: float = 0.7,
-    ) -> tuple[str, dict[str, Any]]:
+    ) -> tuple[str, dict[str, Any]]: ...
+
 
 class OpenAIClient(LLMClient):
 
@@ -71,6 +71,7 @@ class OpenAIClient(LLMClient):
 
         return text, metadata
 
+
 class AnthropicClient(LLMClient):
 
     def __init__(self, config: LLMConfig):
@@ -112,6 +113,7 @@ class AnthropicClient(LLMClient):
         }
 
         return text, metadata
+
 
 class LocalLLMClient(LLMClient):
 
@@ -157,8 +159,8 @@ class LocalLLMClient(LLMClient):
 
         return text, metadata
 
-def create_llm_client(config: LLMConfig) -> LLMClient:
 
+def create_llm_client(config: LLMConfig) -> LLMClient:
     provider = config.provider.lower()
 
     if provider == "openai":

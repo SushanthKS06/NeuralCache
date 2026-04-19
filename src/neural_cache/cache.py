@@ -28,6 +28,7 @@ logger = structlog.get_logger("neural_cache")
 
 LLMGenerateFunc = Callable[[str], Awaitable[tuple[str, dict[str, Any]]]]
 
+
 class NeuralCache:
     def __init__(self, config: CacheConfig | None = None):
         self.config = config or CacheConfig()
@@ -49,6 +50,7 @@ class NeuralCache:
         self._user_llm_func: LLMGenerateFunc | None = None
 
         self._entries: dict[str, CacheEntry] = {}
+        self._request_to_entry: dict[str, str] = {}
 
         self._initialized = False
 
@@ -57,7 +59,6 @@ class NeuralCache:
             return
 
         self.encoder.warmup()
-
         self.search_engine.initialize_index()
 
         existing = self.storage.get_all()
@@ -92,7 +93,6 @@ class NeuralCache:
         metadata: dict[str, Any] | None = None,
     ) -> CacheResult:
         if not self.config.enabled:
-
             return await self._bypass_llm(query, llm_generate)
 
         if not self._initialized:
@@ -121,10 +121,8 @@ class NeuralCache:
 
             if decision.action == CacheAction.HIT:
                 result = self._handle_hit(query, decision, request_id, request_start, latency_breakdown)
-
             elif decision.action == CacheAction.HIT_WITH_ADAPTATION:
                 result = self._handle_adaptation(query, decision, request_start, latency_breakdown, request_id)
-
             elif decision.action == CacheAction.MISS:
                 result = await self._handle_miss(
                     query, embedding, decision, request_start, latency_breakdown,
@@ -140,6 +138,9 @@ class NeuralCache:
                     request_id=request_id,
                 )
 
+            if result.cache_entry is not None:
+                self._request_to_entry[request_id] = result.cache_entry.entry_id
+
             self.metrics.record_request(result, latency_breakdown)
             self.metrics.update_cache_size(self.storage.count())
 
@@ -147,7 +148,7 @@ class NeuralCache:
 
         except Exception as e:
             logger.error("cache_error", error=str(e), query=query[:100])
-            if llm_generate or self._llm_client:
+            if llm_generate or self._user_llm_func or self._llm_client:
                 return await self._bypass_llm(query, llm_generate)
             return CacheResult(
                 response=f"Error: {e}",
@@ -162,7 +163,7 @@ class NeuralCache:
     def _handle_hit(
         self,
         query: str,
-        decision: Any,
+        decision: CacheDecision,
         request_id: str,
         request_start: float,
         latency_breakdown: dict,
@@ -172,7 +173,7 @@ class NeuralCache:
 
         updated_entry = entry.record_access()
         self._entries[entry.entry_id] = updated_entry
-        self.storage.put(updated_entry)
+        self.storage.update_access(entry.entry_id)
 
         total_ms = (time.monotonic() - request_start) * 1000
 
@@ -182,7 +183,7 @@ class NeuralCache:
             from_cache=True,
             similarity_score=decision.similarity_score,
             total_latency_ms=total_ms,
-            cache_entry=entry,
+            cache_entry=updated_entry,
             adapted=False,
             request_id=request_id,
         )
@@ -190,7 +191,7 @@ class NeuralCache:
     def _handle_adaptation(
         self,
         query: str,
-        decision: Any,
+        decision: CacheDecision,
         request_start: float,
         latency_breakdown: dict,
         request_id: str,
@@ -209,7 +210,7 @@ class NeuralCache:
 
         updated_entry = entry.record_access()
         self._entries[entry.entry_id] = updated_entry
-        self.storage.put(updated_entry)
+        self.storage.update_access(entry.entry_id)
 
         total_ms = (time.monotonic() - request_start) * 1000
 
@@ -219,7 +220,7 @@ class NeuralCache:
             from_cache=True,
             similarity_score=decision.similarity_score,
             total_latency_ms=total_ms,
-            cache_entry=entry,
+            cache_entry=updated_entry,
             adapted=True,
             request_id=request_id,
         )
@@ -228,7 +229,7 @@ class NeuralCache:
         self,
         query: str,
         embedding,
-        decision: Any,
+        decision: CacheDecision,
         request_start: float,
         latency_breakdown: dict,
         request_id: str,
@@ -285,12 +286,11 @@ class NeuralCache:
         top_k = self.config.search.top_k
 
         if self.hybrid_retriever:
-
             raw_results = self.search_engine.search(embedding, top_k=top_k * 2)
             results = self.hybrid_retriever.search(query, raw_results, top_k=top_k)
             return results
         else:
-            if self.config.decision.enable_reranking:
+            if self.config.search.enable_reranking:
                 results = self.search_engine.search_with_rerank(
                     embedding, query, self._entries, top_k=top_k,
                 )
@@ -341,18 +341,23 @@ class NeuralCache:
         quality_score: float,
         was_good: bool,
     ) -> None:
-        for entry in self._entries.values():
-            if entry.entry_id == request_id or any(
-                entry.entry_id == request_id for _ in [1]
-            ):
-                self.decision_policy.record_feedback(
-                    similarity=0.0,
-                    was_good=was_good,
-                    quality_score=quality_score,
-                )
-                entry.update_quality(quality_score)
-                self.storage.put(entry)
-                break
+        entry_id = self._request_to_entry.get(request_id)
+        if entry_id is None:
+            return
+
+        entry = self._entries.get(entry_id)
+        if entry is None:
+            return
+
+        self.decision_policy.record_feedback(
+            similarity=0.0,
+            was_good=was_good,
+            quality_score=quality_score,
+        )
+
+        updated_entry = entry.update_quality(quality_score)
+        self._entries[entry_id] = updated_entry
+        self.storage.update_quality(entry_id, quality_score)
 
     def get_metrics(self) -> MetricsSnapshot:
         snapshot = self.metrics.get_snapshot()
@@ -371,6 +376,7 @@ class NeuralCache:
 
     def clear(self) -> None:
         self._entries.clear()
+        self._request_to_entry.clear()
         self.storage.clear()
         self.search_engine.initialize_index()
 

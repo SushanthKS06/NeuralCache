@@ -8,14 +8,16 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from neural_cache.config import CacheConfig
+from neural_cache.config import CacheConfig, StorageConfig, StorageBackend
 
 console = Console()
+
 
 @click.group()
 @click.version_option(version="0.1.0")
 def main():
     pass
+
 
 @main.command()
 @click.option("--config", type=click.Choice(["fast", "accurate", "default"]), default="default")
@@ -29,15 +31,19 @@ def init(config: str, db_path: str | None):
         cfg = CacheConfig()
 
     if db_path:
-        from neural_cache.config import StorageConfig, StorageBackend
-        cfg.storage.backend = StorageBackend.SQLITE
-        cfg.storage.db_path = db_path
+        cfg.storage = StorageConfig(
+            backend=StorageBackend.SQLITE,
+            db_path=db_path,
+            max_entries=cfg.storage.max_entries,
+            wal_mode=cfg.storage.wal_mode,
+        )
 
     console.print(f"[green]Initialized Neural Cache with config: {config}[/green]")
     console.print(f"  Encoder: {cfg.encoder.model_name.value}")
     console.print(f"  Storage: {cfg.storage.backend.value}")
     console.print(f"  Search: {cfg.search.index_type}")
     console.print(f"  Decision: {cfg.decision.strategy.value}")
+
 
 @main.command()
 def stats():
@@ -46,7 +52,7 @@ def stats():
     cache = NeuralCache(CacheConfig.fast_production())
     asyncio.run(cache.initialize())
 
-    stats = cache.get_stats()
+    cache_stats = cache.get_stats()
     metrics = cache.get_metrics()
     cache.close()
 
@@ -54,13 +60,13 @@ def stats():
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="green")
 
-    table.add_row("Cache Size", str(stats["cache_size"]))
-    table.add_row("Search Index Type", stats["search_engine"].get("index_type", "N/A"))
-    table.add_row("Search Index Size", str(stats["search_engine"].get("total_vectors", 0)))
-    table.add_row("Decision Strategy", stats["decision_policy"]["strategy"])
-    table.add_row("Current Threshold", f"{stats['decision_policy']['current_threshold']:.3f}")
-    table.add_row("Eviction Policy", stats["eviction"]["policy"])
-    table.add_row("Eviction Count", str(stats["eviction"]["eviction_count"]))
+    table.add_row("Cache Size", str(cache_stats["cache_size"]))
+    table.add_row("Search Index Type", cache_stats["search_engine"].get("index_type", "N/A"))
+    table.add_row("Search Index Size", str(cache_stats["search_engine"].get("total_vectors", 0)))
+    table.add_row("Decision Strategy", cache_stats["decision_policy"]["strategy"])
+    table.add_row("Current Threshold", f"{cache_stats['decision_policy']['current_threshold']:.3f}")
+    table.add_row("Eviction Policy", cache_stats["eviction"]["policy"])
+    table.add_row("Eviction Count", str(cache_stats["eviction"]["eviction_count"]))
 
     console.print(table)
 
@@ -78,6 +84,7 @@ def stats():
 
         console.print(metric_table)
 
+
 @main.command()
 @click.confirmation_option(prompt="Are you sure you want to clear the cache?")
 def clear():
@@ -90,6 +97,7 @@ def clear():
 
     console.print("[yellow]Cache cleared successfully.[/yellow]")
 
+
 @main.command()
 @click.option("--output-dir", type=str, default="./experiment_results")
 @click.option("--n-queries", type=int, default=50)
@@ -97,7 +105,6 @@ def experiment(output_dir: str, n_queries: int):
     from neural_cache.experiments import ExperimentRunner
 
     async def mock_llm(query: str) -> tuple[str, dict]:
-        import asyncio
         await asyncio.sleep(0.5)
         return f"Response to: {query}", {"model": "mock"}
 
@@ -110,6 +117,7 @@ def experiment(output_dir: str, n_queries: int):
     results = asyncio.run(run())
     console.print(f"[green]Experiments complete. Results saved to {output_dir}/[/green]")
 
+
 @main.command()
 @click.option("--host", type=str, default="127.0.0.1")
 @click.option("--port", type=int, default=8000)
@@ -119,28 +127,27 @@ def serve(host: str, port: int):
     console.print("[dim]Install with: pip install fastapi uvicorn[/dim]")
 
     try:
+        from contextlib import asynccontextmanager
         from fastapi import FastAPI
         import uvicorn
     except ImportError:
         console.print("[red]fastapi and uvicorn are required for server mode.[/red]")
         sys.exit(1)
 
-    app = FastAPI(title="Neural Cache API")
-
     from neural_cache.cache import NeuralCache
     cache = NeuralCache(CacheConfig.fast_production())
 
-    @app.on_event("startup")
-    async def startup():
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
         await cache.initialize()
-
-    @app.on_event("shutdown")
-    async def shutdown():
+        yield
         cache.close()
+
+    app = FastAPI(title="Neural Cache API", lifespan=lifespan)
 
     @app.post("/query")
     async def query_endpoint(query: str):
-        result = asyncio.run(cache.get(query))
+        result = await cache.get(query)
         return {
             "response": result.response,
             "from_cache": result.from_cache,
@@ -151,13 +158,13 @@ def serve(host: str, port: int):
 
     @app.get("/metrics")
     async def metrics_endpoint():
-        metrics = cache.get_metrics()
+        cache_metrics = cache.get_metrics()
         return {
-            "total_requests": metrics.total_requests,
-            "cache_hit_rate": metrics.hit_rate,
-            "avg_latency_ms": metrics.avg_latency_ms,
-            "p95_latency_ms": metrics.p95_latency_ms,
-            "cache_size": metrics.cache_size,
+            "total_requests": cache_metrics.total_requests,
+            "cache_hit_rate": cache_metrics.hit_rate,
+            "avg_latency_ms": cache_metrics.avg_latency_ms,
+            "p95_latency_ms": cache_metrics.p95_latency_ms,
+            "cache_size": cache_metrics.cache_size,
         }
 
     @app.get("/stats")
@@ -166,14 +173,15 @@ def serve(host: str, port: int):
 
     uvicorn.run(app, host=host, port=port)
 
+
 @main.command()
 @click.argument("query")
 @click.option("--json-output", is_flag=True, default=False)
 def ask(query: str, json_output: bool):
     from neural_cache.cache import NeuralCache
 
-    async def mock_llm(query: str) -> tuple[str, dict]:
-        return f"Mock response to: {query}", {"model": "mock"}
+    async def mock_llm(q: str) -> tuple[str, dict]:
+        return f"Mock response to: {q}", {"model": "mock"}
 
     cache = NeuralCache(CacheConfig.fast_production())
 
@@ -199,6 +207,7 @@ def ask(query: str, json_output: bool):
         console.print(f"[dim]From cache: {result.from_cache} | "
                       f"Similarity: {result.similarity_score:.3f} | "
                       f"Latency: {result.total_latency_ms:.1f}ms[/dim]")
+
 
 if __name__ == "__main__":
     main()

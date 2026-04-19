@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from neural_cache.config import StorageConfig, StorageBackend
 from neural_cache.models import CacheEntry
-from neural_cache.storage import CacheStorage, InMemoryStorage, SQLiteStorage, create_storage
+from neural_cache.storage import CacheStorage, InMemoryStorage, create_storage
+
 
 class MultiLevelCache:
     def __init__(
@@ -15,7 +15,6 @@ class MultiLevelCache:
         promote_on_l2_hit: bool = True,
         async_l2_write: bool = False,
     ):
-
         l1_config = StorageConfig(
             backend=StorageBackend.IN_MEMORY,
             max_entries=l1_max_entries,
@@ -40,7 +39,6 @@ class MultiLevelCache:
         entry = self.l1.get(entry_id)
         if entry is not None:
             self._l1_hits += 1
-
             self.l1.update_access(entry_id)
             return entry
 
@@ -48,23 +46,19 @@ class MultiLevelCache:
         if entry is not None:
             self._l2_hits += 1
             self.l2.update_access(entry_id)
-
             if self.promote_on_l2_hit:
                 self._promote_to_l1(entry)
             return entry
+
         self._misses += 1
         return None
 
     def put(self, entry: CacheEntry, write_to_l2: bool = True) -> None:
         self.l1.put(entry)
-
         self._evict_l1_if_needed()
 
         if write_to_l2:
-            if self.async_l2_write:
-                self.l2.put(entry)
-            else:
-                self.l2.put(entry)
+            self.l2.put(entry)
 
     def delete(self, entry_id: str) -> bool:
         l1_deleted = self.l1.delete(entry_id)
